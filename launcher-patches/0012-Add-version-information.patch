@@ -25,7 +25,7 @@ index 0000000..5e73013
 +    private static final LauncherVersion INSTANCE;
 +
 +    public static String getLauncherName() {
-+        return "OLauncher";
++        return "Minecraft Launcher";
 +    }
 +
 +    public static String getVersion() {
@@ -156,7 +156,7 @@ index cc91b34..fff6d93 100644
          var10.mkdirs();
          LOGGER.debug("About to create JFrame.");
          JFrame var12 = new JFrame();
--        var12.setTitle("Minecraft Launcher " + LauncherConstants.getVersionName() + LauncherConstants.PROPERTIES.getEnvironment().getTitle());
+-        var12.setTitle("OLauncher " + LauncherConstants.getVersionName() + LauncherConstants.PROPERTIES.getEnvironment().getTitle());
 +        var12.setTitle(LauncherVersion.getLauncherName() + " " + LauncherVersion.getVersion() + LauncherConstants.PROPERTIES.getEnvironment().getTitle()); // olauncher - update version
          var12.setPreferredSize(new Dimension(900, 580));
  
