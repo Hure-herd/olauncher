@@ -35,7 +35,7 @@ index 12b5f87..7cbae64 100644
  
      public String getTitle() {
 -        return "Minecraft Launcher " + LauncherConstants.getVersionName();
-+        return "OLauncher " + LauncherConstants.getVersionName();
++        return "Minecraft Launcher " + LauncherConstants.getVersionName();
      }
  
      public JFrame getFrame() {
