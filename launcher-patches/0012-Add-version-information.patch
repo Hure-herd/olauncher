@@ -29,7 +29,7 @@ index 0000000..5e73013
 +    }
 +
 +    public static String getVersion() {
-+        return getInstance().toString();
++        return "1.32.3";
 +    }
 +
 +    public static LauncherVersion getInstance() {
