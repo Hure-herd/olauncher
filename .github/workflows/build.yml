@@ -36,17 +36,20 @@ jobs:
       run: |
         bash decompile.sh
         bash init.sh
-        
-        # === 关键修复 ===
-        # 删除 Patch 12 (Add version information)
-        # 这个补丁依赖于反编译的变量名(var12等)，极易因环境不同而冲突，导致构建失败。
-        # 删除它不影响启动器核心功能，只是标题栏不显示详细版本号。
-        rm launcher-patches/0012-Add-version-information.patch
-        
-        # 强制 Git 忽略空白字符差异，提高其他补丁的成功率
+             
+        # 2. 放宽 git am 检查
         sed -i 's/git am/git am --ignore-whitespace/g' applyPatches.sh
         
+        # 3. 应用剩余补丁
         bash applyPatches.sh
+        
+        # === 4. 自定义修改：强制替换窗口标题 ===
+        # 这里的 "My Custom Launcher" 可以改成你想要的名字
+        # 注意：Main.java 控制加载窗口，SwingUserInterface.java 控制主窗口
+        
+        echo "Modifying window title..."
+        sed -i 's/setTitle(.*);/setTitle("Minecraft Launcher");/g' src/main/java/net/minecraft/launcher/Main.java
+        sed -i 's/setTitle(.*);/setTitle("Minecraft Launcher");/g' src/main/java/net/minecraft/launcher/SwingUserInterface.java
 
     - name: Build with Maven
       run: mvn --batch-mode --update-snapshots verify
