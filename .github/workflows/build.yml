@@ -1,9 +1,17 @@
+# This workflow will build a Java project with Maven, and cache/restore any dependencies to improve the workflow execution time
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-java-with-maven
+
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
 name: Java CI with Maven
 
 on:
-  workflow_dispatch:
   push:
     branches: [ "master" ]
+    tags: [ "v*", "ci-test/**" ]
   pull_request:
     branches: [ "master" ]
 
@@ -18,68 +26,58 @@ jobs:
         submodules: recursive
         fetch-tags: true
         fetch-depth: 1
-    
+        ref: ${{ github.ref }}
     - name: Git setup
-      run: |
-        git config --global user.email olauncher@example.com
-        git config --global user.name olauncher
-
+      run: git config --global commit.gpgsign false && git config --global user.email olauncher@example.com && git config --global user.name olauncher
     - name: Set up JDK 11
       uses: actions/setup-java@v4
       with:
         java-version: '11'
         distribution: 'temurin'
         cache: maven
-    
-    - name: Set up OLauncher and Fix 0012
+    - name: Set up OLauncher
       run: |
         bash decompile.sh
         bash init.sh
         
-        # 1. 移除报错的 0012 补丁
-        # 我们后面会手动实现它的功能，避免 git am 报错
-        rm launcher-patches/0012-Add-version-information.patch
+        # 应用补丁 (既然现在能通过了，就正常运行)
+        bash applyPatches.sh
         
-        # 2. 运行剩余补丁
-        sed -i 's/git am/git am --ignore-whitespace/g' applyPatches.sh
-        bash applyPatches.sh || true # 允许失败，防止因为缺少0012导致后续补丁微小错位
+        # === 动态查找并修改标题 ===
+        echo "Searching for source files..."
         
-        # 3. 手动创建 LauncherVersion.java (这是 0012 的核心功能，缺了它会编译失败)
-        # 我们创建一个目录并写入一个简化版的类，足以支持运行
-        mkdir -p src/main/java/dev/figboot/olauncher/launcher/
-        cat > src/main/java/dev/figboot/olauncher/launcher/LauncherVersion.java <<EOF
-        package dev.figboot.olauncher.launcher;
-        public final class LauncherVersion {
-            public static String getLauncherName() { return "OLauncher"; }
-            public static String getVersion() { return "Custom-Build"; }
-        }
-        EOF
+        # 使用 find 命令自动查找 Main.java，不管它被移到了哪个目录下
+        # grep 确保我们找到的是启动器的 Main 而不是其他库的 Main
+        MAIN_PATH=$(find . -name "Main.java" | grep "launcher/Main.java" | head -n 1)
+        UI_PATH=$(find . -name "SwingUserInterface.java" | head -n 1)
         
-        # 4. 修复 LauncherConstants.java 的引用 (模拟 0012 的修改)
-        # 添加 import
-        sed -i '/import java.net.URL;/a import dev.figboot.olauncher.launcher.LauncherVersion;' src/main/java/net/minecraft/launcher/LauncherConstants.java
-        # 替换 getVersionName 方法的内容
-        sed -i 's/LauncherConstants.class.getPackage().getImplementationVersion()/LauncherVersion.getVersion()/g' src/main/java/net/minecraft/launcher/LauncherConstants.java
+        echo "Found Main.java at: $MAIN_PATH"
+        echo "Found SwingUserInterface.java at: $UI_PATH"
+        
+        # 修改 Main.java (如果不为空)
+        if [ ! -z "$MAIN_PATH" ]; then
+            # 尝试多种替换模式，确保能匹配到 setTitle
+            sed -i 's/.*setTitle(.*);/var12.setTitle("Minecraft Launcher");/g' "$MAIN_PATH"
+            # 这里的 var12 可能变了，尝试用更通用的正则（匹配任何 .setTitle）
+            sed -i 's/[a-zA-Z0-9_]*\.setTitle(.*);/frame.setTitle("Minecraft Launcher");/g' "$MAIN_PATH"
+        else
+            echo "Error: Could not find Main.java"
+            # 不强制退出，尝试继续构建
+        fi
 
-        # 5. 自定义窗口标题 (解决你的最终需求)
-        # 我们使用通配符匹配 setTitle(...)，直接替换为你的自定义标题
-        # 这样无论反编译出来的变量名是 var12 还是 var10 都能成功修改
-        
-        # 修改 Main.java (加载小窗口)
-        sed -i 's/.*setTitle(.*);/var12.setTitle("Minecraft Launcher");/g' src/main/java/net/minecraft/launcher/Main.java || echo "Main.java patch failed"
-        # 如果 var12 不对，尝试用更宽泛的匹配
-        sed -i 's/.*\.setTitle(.*);/        var12.setTitle("Minecraft Launcher");/' src/main/java/net/minecraft/launcher/Main.java
-
-        # 修改 SwingUserInterface.java (主窗口)
-        # 注意：这里需要先把中文转为 Unicode 避免乱码，"我的启动器" = \u6211\u7684\u542f\u52a8\u5668
-        sed -i 's/.*setTitle(.*);/        this.frame.setTitle("\\u6211\\u7684\\u542f\\u52a8\\u5668");/g' src/main/java/net/minecraft/launcher/SwingUserInterface.java
-
+        # 修改 SwingUserInterface.java (如果不为空)
+        if [ ! -z "$UI_PATH" ]; then
+            # 这里设置主窗口标题。注意：中文请使用 Unicode，例如 "我的启动器"
+            # \u6211\u7684\u542f\u52a8\u5668 = "我的启动器"
+            # 下面的 sed 会查找所有 setTitle 并替换内容
+            sed -i 's/setTitle(.*);/setTitle("Minecraft Launcher");/g' "$UI_PATH"
+        else
+             echo "Error: Could not find SwingUserInterface.java"
+        fi
     - name: Build with Maven
       run: mvn --batch-mode --update-snapshots verify
-
     - name: Generate redistributable
       run: bash genredist.sh
-
     - name: Upload redistributable
       uses: actions/upload-artifact@v4
       id: upload-artifact
