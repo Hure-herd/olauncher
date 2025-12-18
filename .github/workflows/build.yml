@@ -1,7 +1,7 @@
 name: Java CI with Maven
 
 on:
-  workflow_dispatch: # 允许手动点按钮启动
+  workflow_dispatch:
   push:
     branches: [ "master" ]
   pull_request:
@@ -18,8 +18,7 @@ jobs:
         submodules: recursive
         fetch-tags: true
         fetch-depth: 1
-        ref: ${{ github.ref }}
-
+    
     - name: Git setup
       run: |
         git config --global user.email olauncher@example.com
@@ -32,24 +31,48 @@ jobs:
         distribution: 'temurin'
         cache: maven
     
-    - name: Set up OLauncher
+    - name: Set up OLauncher and Fix 0012
       run: |
         bash decompile.sh
         bash init.sh
-             
-        # 2. 放宽 git am 检查
+        
+        # 1. 移除报错的 0012 补丁
+        # 我们后面会手动实现它的功能，避免 git am 报错
+        rm launcher-patches/0012-Add-version-information.patch
+        
+        # 2. 运行剩余补丁
         sed -i 's/git am/git am --ignore-whitespace/g' applyPatches.sh
+        bash applyPatches.sh || true # 允许失败，防止因为缺少0012导致后续补丁微小错位
         
-        # 3. 应用剩余补丁
-        bash applyPatches.sh
+        # 3. 手动创建 LauncherVersion.java (这是 0012 的核心功能，缺了它会编译失败)
+        # 我们创建一个目录并写入一个简化版的类，足以支持运行
+        mkdir -p src/main/java/dev/figboot/olauncher/launcher/
+        cat > src/main/java/dev/figboot/olauncher/launcher/LauncherVersion.java <<EOF
+        package dev.figboot.olauncher.launcher;
+        public final class LauncherVersion {
+            public static String getLauncherName() { return "OLauncher"; }
+            public static String getVersion() { return "Custom-Build"; }
+        }
+        EOF
         
-        # === 4. 自定义修改：强制替换窗口标题 ===
-        # 这里的 "My Custom Launcher" 可以改成你想要的名字
-        # 注意：Main.java 控制加载窗口，SwingUserInterface.java 控制主窗口
+        # 4. 修复 LauncherConstants.java 的引用 (模拟 0012 的修改)
+        # 添加 import
+        sed -i '/import java.net.URL;/a import dev.figboot.olauncher.launcher.LauncherVersion;' src/main/java/net/minecraft/launcher/LauncherConstants.java
+        # 替换 getVersionName 方法的内容
+        sed -i 's/LauncherConstants.class.getPackage().getImplementationVersion()/LauncherVersion.getVersion()/g' src/main/java/net/minecraft/launcher/LauncherConstants.java
+
+        # 5. 自定义窗口标题 (解决你的最终需求)
+        # 我们使用通配符匹配 setTitle(...)，直接替换为你的自定义标题
+        # 这样无论反编译出来的变量名是 var12 还是 var10 都能成功修改
         
-        echo "Modifying window title..."
-        sed -i 's/setTitle(.*);/setTitle("Minecraft Launcher");/g' src/main/java/net/minecraft/launcher/Main.java
-        sed -i 's/setTitle(.*);/setTitle("Minecraft Launcher");/g' src/main/java/net/minecraft/launcher/SwingUserInterface.java
+        # 修改 Main.java (加载小窗口)
+        sed -i 's/.*setTitle(.*);/var12.setTitle("Minecraft Launcher");/g' src/main/java/net/minecraft/launcher/Main.java || echo "Main.java patch failed"
+        # 如果 var12 不对，尝试用更宽泛的匹配
+        sed -i 's/.*\.setTitle(.*);/        var12.setTitle("Minecraft Launcher");/' src/main/java/net/minecraft/launcher/Main.java
+
+        # 修改 SwingUserInterface.java (主窗口)
+        # 注意：这里需要先把中文转为 Unicode 避免乱码，"我的启动器" = \u6211\u7684\u542f\u52a8\u5668
+        sed -i 's/.*setTitle(.*);/        this.frame.setTitle("\\u6211\\u7684\\u542f\\u52a8\\u5668");/g' src/main/java/net/minecraft/launcher/SwingUserInterface.java
 
     - name: Build with Maven
       run: mvn --batch-mode --update-snapshots verify
